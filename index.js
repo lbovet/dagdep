@@ -25,7 +25,7 @@ if(process.argv.indexOf('--help') == -1) {
   // resolve plugins
   const resolver = require(`./resolver/${conf.resolver.type}.js`)(conf.resolver, conf.repository);
   const repository = require(`./repository/${conf.repository.type}.js`)(conf.repository, resolver);
-  const database = require(`./database/${conf.database.type}.js`)(conf.database);
+  const database = require(`./database/${conf.database.type}.js`)(conf.database, conf.resolver.type);
   // create a pool of resolve functions
   const pool = pooling.createPool({
     create: () => Promise.resolve(resolver.resolve()),
@@ -46,11 +46,31 @@ if(process.argv.indexOf('--help') == -1) {
       }
     });
   };
+  // normalize resolver output for database insert
+  const normalize = function(data) {
+    if(data.type === 'dependency') {
+      return {
+        type: 'dependency',
+        source: resolver.parse(data.source.id),
+        target: resolver.parse(data.target.id)
+      }
+    } else if(data.type === 'artifact') {
+      var artifact = resolver.parse(data.id);
+      artifact.type = conf.resolver.type;
+      artifact.status = data.status;
+      var result = {
+        type: 'artifact',
+        artifact: artifact
+      }
+      return result;
+    }
+  }
   // do the job
   diff(repository.artifacts(), database.artifacts())
     .pipe(filter.obj(data => data[0] && !data[1])) // keep the artifacts that exist only in the repository
     .pipe(map.obj(data => data[0]))
     .pipe(parallel.obj({maxConcurrency: conf.parallel}, resolve))
+    .pipe(map.obj(normalize))
     .pipe(database.updates())
     .on('finish',() => pool.drain().then(pool.clear()))
 } else {

@@ -9,7 +9,7 @@ module.exports = () => {
       return tokens[1].replace(/\//g,'.')+':'+tokens[2]+':'+tokens[3];
     },
     parse: id => {
-      var tokens = pathPattern.exec(id);
+      var tokens = artifactPattern.exec(id);
       return {
         groupId: tokens[1],
         artifactId: tokens[2],
