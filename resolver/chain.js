@@ -15,6 +15,7 @@ module.exports = () => {
     },
     id: maven.id,
     parse: maven.parse,
+    format: maven.format,
     type: maven.type
   }
 }

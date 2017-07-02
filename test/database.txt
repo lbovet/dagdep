@@ -1,2 +1,2 @@
-{ "id": "a.b.d:d:1.0"}
-{ "id": "f.g.h:h:1.0"}
+{ "groupId": "a.b.e", "artifactId": "e", "type": "chain", "version": "1.0", "status": "complete" }
+{ "groupId": "f.g.h", "artifactId": "h", "type": "chain", "version": "1.0", "status": "complete" }

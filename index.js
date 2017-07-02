@@ -48,12 +48,15 @@ if(process.argv.indexOf('--help') == -1) {
   };
   // normalize resolver output for database insert
   const normalize = function(data) {
+    var result;
     if(data.type === 'dependency') {
-      return {
+      result = {
         type: 'dependency',
         source: resolver.parse(data.source.id),
         target: resolver.parse(data.target.id)
       }
+      result.source.type = conf.resolver.type;
+      result.target.type = conf.resolver.type;
     } else if(data.type === 'artifact') {
       var artifact = resolver.parse(data.id);
       artifact.type = conf.resolver.type;
@@ -62,17 +65,22 @@ if(process.argv.indexOf('--help') == -1) {
         type: 'artifact',
         artifact: artifact
       }
-      return result;
     }
+    return result;
   }
   // do the job
-  diff(repository.artifacts(), database.artifacts())
+  diff(repository.artifacts(),
+       database.artifacts()
+        .pipe(map.obj(data => {
+          return { id: resolver.format(data) }
+        })))
     .pipe(filter.obj(data => data[0] && !data[1])) // keep the artifacts that exist only in the repository
     .pipe(map.obj(data => data[0]))
     .pipe(parallel.obj({maxConcurrency: conf.parallel}, resolve))
     .pipe(map.obj(normalize))
+    .pipe(map.obj(x => { console.log(x); return x}))
     .pipe(database.updates())
-    .on('finish',() => pool.drain().then(pool.clear()))
+    .on('finish',() => pool.drain().then(() => {pool.clear()}))
 } else {
   // usage
   const sections = [

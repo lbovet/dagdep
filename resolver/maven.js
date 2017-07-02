@@ -16,6 +16,7 @@ module.exports = () => {
         version: tokens[3]
       }
     },
+    format: artifact => artifact.groupId+":"+artifact.artifactId+":"+artifact.version,
     type: "pom"
   }
 }
