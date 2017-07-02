@@ -4,7 +4,7 @@ Extracts module dependencies to feed a graph database model
 # Usage
 
 ```
-dagdep - Extracts module dependencies to feed a graph database model 
+dagdep - Extracts module dependencies to feed a graph database model
 
 Synopsis
 

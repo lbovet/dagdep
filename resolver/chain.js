@@ -1,15 +1,16 @@
 module.exports = () => {
+  var last;
   return {
     resolve: () => {
-      var last;
-      return (data, cb) => {
+      return function (data, enc, cb) {
+        self = this;
         if(last) {
-          cb(null, { type: "dependency", "source": last, "target": data });
-          cb(null, { type: "artifact", id: last.id, status: "complete" });
+          this.push({ type: "dependency", "source": last, "target": data });
         }
-        cb(null, null);
+        this.push({ type: "artifact", id: data.id, status: "complete" });
+        cb();
         last = data;
-      }
+      };
     }
   }
 }

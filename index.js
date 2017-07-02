@@ -1,10 +1,11 @@
 #! /usr/bin/env node
 const usage = require('command-line-usage');
-const parallel = require('parallel-transform');
+const parallel = require('through2-concurrent');
 const diff = require('diff-stream');
 const filter = require('stream-filter');
 const through2 = require('through2');
-const map = require("through2-map")
+const map = require('through2-map');
+const pooling = require('generic-pool');
 const conf = require('rc')('dagdep', {
   repository: {
     type: 'filesystem'
@@ -17,16 +18,38 @@ const conf = require('rc')('dagdep', {
   },
   parallel: 1
 });
-
 if(process.argv.indexOf('--help') == -1) {
+  // resolve plugins
   const repository = require(`./repository/${conf.repository.type}.js`)(conf.repository);
   const resolver = require(`./resolver/${conf.resolver.type}.js`)(conf.resolver, conf.repository);
   const database = require(`./database/${conf.database.type}.js`)(conf.database);
+  // create a pool of resolve functions
+  const pool = pooling.createPool({
+    create: () => Promise.resolve(resolver.resolve()),
+    destroy: (fn) => fn.destroy ? fn.destroy() : null
+  }, { min: conf.parallel, max: conf.parallel });
+  // resolve function proxy wrapping the pool aquire/release
+  const resolve = function(data, enc, cb) {
+    var self = this;
+    pool.acquire().then( (fn) => {
+      try {
+        fn.bind(self)(data, enc, () => {
+          pool.release(fn);
+          cb();
+        });
+      } catch(e) {
+        pool.release(fn);
+        console.log(e.stack);
+      }
+    });
+  };
+  // do the job
   diff(repository.artifacts(), database.artifacts())
-    .pipe(filter.obj(data => data[0] && !data[1])) // keep the ones that exist only in the repository
+    .pipe(filter.obj(data => data[0] && !data[1])) // keep the artifacts that exist only in the repository
     .pipe(map.obj(data => data[0]))
-    .pipe(parallel(conf.parallel, {ordered:false}, resolver.resolve()))
-    .pipe(database.updates());
+    .pipe(parallel.obj({maxConcurrency: conf.parallel}, resolve))
+    .pipe(database.updates())
+    .on('finish',() => pool.clear())
 } else {
   // usage
   const sections = [
