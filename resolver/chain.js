@@ -1,3 +1,4 @@
+const maven = require('./maven')();
 module.exports = () => {
   var last;
   return {
@@ -11,6 +12,9 @@ module.exports = () => {
         cb();
         last = data;
       };
-    }
+    },
+    id: maven.id,
+    parse: maven.parse,
+    type: maven.type
   }
 }

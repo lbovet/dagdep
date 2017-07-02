@@ -7,31 +7,34 @@ const through2 = require('through2');
 const map = require('through2-map');
 const pooling = require('generic-pool');
 const conf = require('rc')('dagdep', {
-  repository: {
-    type: 'filesystem'
-  },
-  resolver: {
-    type: 'chain'
-  },
-  database: {
-    type: 'filesystem'
-  },
+  repository: {},
+  resolver: {},
+  database: {},
   parallel: 1
 });
+if(!conf.repository.type) {
+  conf.repository.type = conf.repository.url ? 'artifactory' : 'filesystem'
+}
+if(!conf.resolver.type) {
+  conf.resolver.type = conf.repository.context ? 'maven' : 'chain'
+}
+if(!conf.database.type) {
+  conf.database.type = conf.database.url ? 'neo4j' : 'filesystem'
+}
 if(process.argv.indexOf('--help') == -1) {
   // resolve plugins
-  const repository = require(`./repository/${conf.repository.type}.js`)(conf.repository);
   const resolver = require(`./resolver/${conf.resolver.type}.js`)(conf.resolver, conf.repository);
+  const repository = require(`./repository/${conf.repository.type}.js`)(conf.repository, resolver);
   const database = require(`./database/${conf.database.type}.js`)(conf.database);
   // create a pool of resolve functions
   const pool = pooling.createPool({
     create: () => Promise.resolve(resolver.resolve()),
-    destroy: (fn) => fn.destroy ? fn.destroy() : null
+    destroy: fn => fn.destroy ? fn.destroy() : null
   }, { min: conf.parallel, max: conf.parallel });
   // resolve function proxy wrapping the pool aquire/release
   const resolve = function(data, enc, cb) {
     var self = this;
-    pool.acquire().then( (fn) => {
+    pool.acquire().then( fn => {
       try {
         fn.bind(self)(data, enc, () => {
           pool.release(fn);
@@ -49,7 +52,7 @@ if(process.argv.indexOf('--help') == -1) {
     .pipe(map.obj(data => data[0]))
     .pipe(parallel.obj({maxConcurrency: conf.parallel}, resolve))
     .pipe(database.updates())
-    .on('finish',() => pool.clear())
+    .on('finish',() => pool.drain().then(pool.clear()))
 } else {
   // usage
   const sections = [
@@ -88,24 +91,24 @@ if(process.argv.indexOf('--help') == -1) {
           typeLabel: '[underline]{password}'
         },
         {
-          name: 'resolver.type',
-          typeLabel: '[maven|nuget|npm|chain]',
-          description: 'Repository for artifact resolution. Defaults to [bold]{chain} if no context is given. [bold]{maven}, otherwise.'
-        },
-        {
-          name: 'resolver.context',
-          typeLabel: '[underline]{resolution-context}',
+          name: 'repository.context',
+          typeLabel: '[underline]{repository-context}',
           description: 'Repository context for artifact resolution'
         },
         {
-          name: 'resolver.visit',
+          name: 'repository.visit',
           typeLabel: '[underline]{visit-context}, ...',
-          description: 'Repository contexts to visit, defaults to [underline]{resolution-context}'
+          description: 'Repository contexts to visit, defaults to [underline]{repository-context}'
+        },
+        {
+          name: 'resolver.type',
+          typeLabel: '[maven|nuget|npm|chain]',
+          description: 'Repository for artifact resolution. Defaults to [bold]{chain} if no repository context is given. [bold]{maven}, otherwise.'
         },
         {
           name: 'database.type',
           typeLabel: '[neo4j|filesystem]',
-          description: 'Database type. Defaults to [bold]{filesystem} if no context is given. [bold]{neo4j}, otherwise'
+          description: 'Database type. Defaults to [bold]{filesystem} if no URL is given. [bold]{neo4j}, otherwise'
         },
         {
           name: 'database.url',
