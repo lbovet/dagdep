@@ -3,7 +3,7 @@ module.exports = (conf, repoConf) => {
   const pathPattern = /(.*)\/(.*)\/(.*)/
   const artifactPattern = /(.*):(.*):(.*)/
   return {
-    resolve: () => delegate('gradle.bat', ['-b', 'resolver/build.gradle', '-q', `-Drepository=${repoConf.url}/${repoConf.context}`]),
+    resolve: () => delegate('gradle'+/^win/.test(process.platform) ? ".bat": "", ['-b', 'resolver/build.gradle', '-q', `-Drepository=${repoConf.url}/${repoConf.context}`]),
     id: entry => {
       var tokens = pathPattern.exec(entry.path);
       return tokens[1].replace(/\//g,'.')+':'+tokens[2]+':'+tokens[3];
