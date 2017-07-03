@@ -6,6 +6,7 @@ const filter = require('stream-filter');
 const through2 = require('through2');
 const map = require('through2-map');
 const pooling = require('generic-pool');
+const status = require('log-update');
 const conf = require('rc')('dagdep', {
   repository: {},
   resolver: {},
@@ -22,6 +23,25 @@ if(!conf.database.type) {
   conf.database.type = conf.database.url ? 'neo4j' : 'filesystem'
 }
 if(process.argv.indexOf('--help') == -1) {
+  // status bar
+  var nicetime = (ms, use_seconds) => {
+    var seconds = (ms / (use_seconds ? 1 : 1000)).toFixed((use_seconds ? 0 : 3));
+    var minutes = (seconds / 60).toFixed(3);
+    var time = (minutes < 2) ? seconds : minutes;
+    return time + (minutes < 2 ?  's' : 'm');
+  };
+  var counts = { repo: 0, db: 0, resolving: 0, resolved: 0, deps:0, updated: 0 };
+  const inc = (counter) => (data) => { if(data) counts[counter]++; return data }
+  var statusTimer;
+  if(conf.database.type !== 'filesystem') statusTimer = setInterval(() => {
+    status(`| ${("   "+nicetime(process.uptime(), true)).slice(-3)} `+
+      `| re:${("      " + counts.repo).slice(-6)} `+
+      `| db:${("      " + counts.db).slice(-6)} ` +
+      `| rg:${("      " + counts.resolving).slice(-6)} `+
+      `| rd:${("      " + counts.resolved).slice(-6)} `+
+      `| dp:${("      " + counts.deps).slice(-6)} `+
+      `| up:${("      " + counts.updated).slice(-6)} |`);
+  }, 100);
   // resolve plugins
   const resolver = require(`./resolver/${conf.resolver.type}.js`)(conf.resolver, conf.repository);
   const repository = require(`./repository/${conf.repository.type}.js`)(conf.repository, resolver);
@@ -41,14 +61,15 @@ if(process.argv.indexOf('--help') == -1) {
           cb();
         });
       } catch(e) {
-        pool.release(fn);
-        console.log(e.stack);
+        //pool.release(fn);
+        console.error(e.stack);
       }
     });
   };
   // normalize resolver output for database insert
   const normalize = function(data) {
     var result;
+    if(!data) return null;
     if(data.type === 'dependency') {
       result = {
         type: 'dependency',
@@ -57,6 +78,7 @@ if(process.argv.indexOf('--help') == -1) {
       }
       result.source.type = conf.resolver.type;
       result.target.type = conf.resolver.type;
+      counts.deps++;
     } else if(data.type === 'artifact') {
       var artifact = resolver.parse(data.id);
       artifact.type = conf.resolver.type;
@@ -65,22 +87,28 @@ if(process.argv.indexOf('--help') == -1) {
         type: 'artifact',
         artifact: artifact
       }
+      counts.resolved++;
     }
     return result;
-  }
+  };
   // do the job
-  diff(repository.artifacts(),
-       database.artifacts()
+  diff(repository.artifacts().pipe(map.obj(inc('repo'))),
+       database.artifacts().pipe(map.obj(inc('db')))
         .pipe(map.obj(data => {
           return { id: resolver.format(data) }
         })))
     .pipe(filter.obj(data => data[0] && !data[1])) // keep the artifacts that exist only in the repository
     .pipe(map.obj(data => data[0]))
+    .pipe(map.obj(inc('resolving')))
     .pipe(parallel.obj({maxConcurrency: conf.parallel}, resolve))
     .pipe(map.obj(normalize))
-    .pipe(map.obj(x => { console.log(x); return x}))
     .pipe(database.updates())
-    .on('finish',() => pool.drain().then(() => {pool.clear()}))
+    .pipe(map.obj(inc('updated')))
+    .on('data', ()=>{})
+    .on('finish',() => pool.drain().then(() => {
+      if(statusTimer) setTimeout(() => clearInterval(statusTimer), 1000);
+      pool.clear();
+    }))
 } else {
   // usage
   const sections = [
