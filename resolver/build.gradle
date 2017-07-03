@@ -1,0 +1,40 @@
+repositories {
+    maven {
+        url System.getProperty("repository")
+    }
+}
+
+defaultTasks 'dagdep'
+task dagdep << {
+  def slurper = new groovy.json.JsonSlurper()
+  System.in.eachLine() { line ->
+    try {
+      def source = slurper.parseText(line).id
+      def result = configurations
+        .detachedConfiguration(dependencies.create(source))
+        .incoming.resolutionResult.root.dependencies[0]
+      if(result instanceof org.gradle.api.artifacts.result.ResolvedDependencyResult) {
+        result.selected.dependencies.each {
+          println(groovy.json.JsonOutput.toJson([
+            type: 'dependency',
+            source: [id: source],
+            target: [id: it.requested.toString()]
+          ]))
+        }
+        println(groovy.json.JsonOutput.toJson([
+          type: 'artifact',
+          id: source,
+          status: 'complete'
+        ]))
+      } else {
+        println(groovy.json.JsonOutput.toJson([
+          type: 'artifact',
+          id: source,
+          status: 'incomplete'
+        ]))
+      }
+    } catch(e) {
+      e.printStackTrace(System.err)
+    }
+  }
+}

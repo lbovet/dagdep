@@ -11,13 +11,24 @@ module.exports = (conf, resolver) => {
     headers: {
     'content-type': 'text/plain',
     },
-    body: `items.find({"repo":{"$eq":"${conf.context}"}},{"name":{"$match": "*.${resolver.type}"}}).include("path", "name")`
+    auth: {
+      'user': conf.username,
+      'pass': conf.password
+    },
+    body: `items.find(
+      {"repo":{"$eq":"${conf.context}"}},
+      {"path":{"$nmatch": "*-SNAPSHOT"}},
+      {"name":{"$match": "*.${resolver.type}"}}
+    ).include("path", "name")`
   };
   return {
-    artifacts: () => request(options)
+    artifacts: () => { try{ return request(options)
       .pipe(json.parse('results.*'))
       .pipe(map.obj( x => {
         return { id: resolver.id(x) }
       }))
-  }
+    } catch(e) {
+      console.error(e)
+    }
+  }}
 }

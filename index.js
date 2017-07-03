@@ -6,6 +6,9 @@ const filter = require('stream-filter');
 const through2 = require('through2');
 const map = require('through2-map');
 const pooling = require('generic-pool');
+const status = require('log-update');
+const fs = require('fs');
+const chalk = require('chalk');
 const conf = require('rc')('dagdep', {
   repository: {},
   resolver: {},
@@ -21,7 +24,36 @@ if(!conf.resolver.type) {
 if(!conf.database.type) {
   conf.database.type = conf.database.url ? 'neo4j' : 'filesystem'
 }
+const debug = (process.argv.indexOf('-d') != -1)
+const trace = (name) => (data) => { if(debug) console.log(name, data) }
 if(process.argv.indexOf('--help') == -1) {
+  // status bar
+  console.log(chalk.magenta(conf.repository.type)+' '+
+    chalk.cyan(("                 "+conf.resolver.type).slice(-17)) +' '+
+    chalk.green(("              "+conf.database.type).slice(-15)))
+  var nicetime = (seconds) => {
+    var minutes = (seconds / 60);
+    var time = (minutes < 2) ? seconds : minutes;
+    return Math.trunc(time) + (minutes < 2 ?  's' : 'm');
+  };
+  var counts = { repo: 0, db: 0, resolving: 0, resolved: 0, deps:0, updated: 0 };
+  const inc = (counter) => (data) => { if(data) counts[counter]++; return data }
+  var statusTimer;
+  var buffer=[]
+  if(!debug) statusTimer = setInterval(() => {
+    buffer.unshift(counts.resolved)
+    if(buffer.length > 60) buffer.pop()
+    var throughput = Math.trunc(60*(buffer[0]-buffer.slice(-1))/buffer.length)
+    status(
+      chalk.magenta('r'+("      " + counts.repo).slice(-6)) + ' ' +
+      chalk.green('d'+("      " + counts.db).slice(-6)) + ' ' +
+      chalk.blue('g'+("      " + counts.resolving).slice(-6)) + ' ' +
+      chalk.cyan('s'+("      " + counts.resolved).slice(-6)) + ' ' +
+      chalk.white('d'+("      " + counts.deps).slice(-6)) + ' ' +
+      chalk.green('u'+("      " + counts.updated).slice(-6)) + ' ' +
+      chalk.yellow(("    " + throughput).slice(-4)+ '/m ') +
+      chalk.yellow(("     "+nicetime(process.uptime())).slice(-5)));
+  }, 1000);
   // resolve plugins
   const resolver = require(`./resolver/${conf.resolver.type}.js`)(conf.resolver, conf.repository);
   const repository = require(`./repository/${conf.repository.type}.js`)(conf.repository, resolver);
@@ -41,14 +73,15 @@ if(process.argv.indexOf('--help') == -1) {
           cb();
         });
       } catch(e) {
-        pool.release(fn);
-        console.log(e.stack);
+        //pool.release(fn);
+        console.error(e.stack);
       }
     });
   };
   // normalize resolver output for database insert
   const normalize = function(data) {
     var result;
+    if(!data) return data;
     if(data.type === 'dependency') {
       result = {
         type: 'dependency',
@@ -57,6 +90,7 @@ if(process.argv.indexOf('--help') == -1) {
       }
       result.source.type = conf.resolver.type;
       result.target.type = conf.resolver.type;
+      counts.deps++;
     } else if(data.type === 'artifact') {
       var artifact = resolver.parse(data.id);
       artifact.type = conf.resolver.type;
@@ -65,22 +99,31 @@ if(process.argv.indexOf('--help') == -1) {
         type: 'artifact',
         artifact: artifact
       }
+      counts.resolved++;
     }
     return result;
-  }
+  };
   // do the job
-  diff(repository.artifacts(),
-       database.artifacts()
+  diff(repository.artifacts().pipe(map.obj(inc('repo'))).on('data', trace('repo')),
+       database.artifacts().pipe(map.obj(inc('db')))
         .pipe(map.obj(data => {
           return { id: resolver.format(data) }
-        })))
+        }))
+        .on('data', trace('db')))
+    .on('data', trace('compared'))
     .pipe(filter.obj(data => data[0] && !data[1])) // keep the artifacts that exist only in the repository
     .pipe(map.obj(data => data[0]))
-    .pipe(parallel.obj({maxConcurrency: conf.parallel}, resolve))
+    .pipe(map.obj(inc('resolving')))
+    .pipe(parallel.obj({maxConcurrency: conf.parallel, highWaterMark: 262144}, resolve))
     .pipe(map.obj(normalize))
-    .pipe(map.obj(x => { console.log(x); return x}))
     .pipe(database.updates())
-    .on('finish',() => pool.drain().then(() => {pool.clear()}))
+    .pipe(map.obj(inc('updated')))
+    .pipe(map.obj(data => JSON.stringify(data)+'\n'))
+    .pipe(fs.createWriteStream('output.log'))
+    .on('finish',() => pool.drain().then(() => {
+      if(statusTimer) setTimeout(() => clearInterval(statusTimer), 1000);
+      pool.clear();
+    }))
 } else {
   // usage
   const sections = [

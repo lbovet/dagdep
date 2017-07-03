@@ -4,7 +4,7 @@ const EventEmitter = require('events').EventEmitter;
 const through2 = require('through2');
 module.exports = (conf, type) => {
   const db = neo4j.driver(conf.url || "bolt://localhost", neo4j.auth.basic(conf.username || "neo4j", conf.password || "password"));
-  const list = `MATCH (n:Artifact { type:'${type}' }) RETURN n ORDER BY n.groupId, n.artifactId, n.version`
+  const list = `MATCH (n:Artifact { type:'${type}', status:'complete' }) RETURN n ORDER BY n.groupId+"."+n.artifactId+"."+n.version`
   const merge =
   'MERGE (source:Artifact {artifactId:{source}.artifactId, groupId:{source}.groupId, version:{source}.version, type:{source}.type}) ' +
   'MERGE (target:Artifact {artifactId:{target}.artifactId, groupId:{target}.groupId, version:{target}.version, type:{source}.type}) ' +
@@ -19,7 +19,7 @@ module.exports = (conf, type) => {
   return {
     artifacts: () => {
       var session = db.session();
-      var stream = new Readable({objectMode: true});
+      var stream = new Readable({objectMode: true, highWaterMark: 262144});
       stream._read = () => {};
       session.run(list).subscribe({
         onNext: function(record) {
@@ -51,9 +51,11 @@ module.exports = (conf, type) => {
           .then(function(result) {
             cb()
           })
-      }, () => {
-        session.close()
+      },
+      (cb) => { // on close
+        session.close();
         db.close();
+        cb();
       })
     }
   }
