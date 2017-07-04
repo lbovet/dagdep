@@ -8,8 +8,8 @@ defaultTasks 'dagdep'
 task dagdep << {
   def slurper = new groovy.json.JsonSlurper()
   System.in.eachLine() { line ->
+    def source = slurper.parseText(line).id
     try {
-      def source = slurper.parseText(line).id
       def result = configurations
         .detachedConfiguration(dependencies.create(source))
         .incoming.resolutionResult.root.dependencies[0]
@@ -34,6 +34,11 @@ task dagdep << {
         ]))
       }
     } catch(e) {
+      println(groovy.json.JsonOutput.toJson([
+        type: 'artifact',
+        id: source,
+        status: 'incomplete'
+      ]))
       e.printStackTrace(System.err)
     }
   }

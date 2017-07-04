@@ -4,9 +4,10 @@ const json = require('JSONStream');
 module.exports = () => {
   return {
     artifacts: () => fs.createReadStream('./test/database.txt').pipe(json.parse()),
-    updates: () => through2.obj(function(data, enc, cb) {
+    updates: () => function(data, enc, cb) {
       this.push(data);
       cb();
-    })
+    },
+    close: () => {}
   }
 }

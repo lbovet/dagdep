@@ -73,7 +73,7 @@ if(process.argv.indexOf('--help') == -1) {
           cb();
         });
       } catch(e) {
-        //pool.release(fn);
+        pool.release(fn);
         console.error(e.stack);
       }
     });
@@ -116,13 +116,14 @@ if(process.argv.indexOf('--help') == -1) {
     .pipe(map.obj(inc('resolving')))
     .pipe(parallel.obj({maxConcurrency: conf.parallel, highWaterMark: 262144}, resolve))
     .pipe(map.obj(normalize))
-    .pipe(database.updates())
+    .pipe(parallel.obj({maxConcurrency: conf.parallel, highWaterMark: 262144}, database.updates()))
     .pipe(map.obj(inc('updated')))
     .pipe(map.obj(data => JSON.stringify(data)+'\n'))
     .pipe(fs.createWriteStream('output.log'))
     .on('finish',() => pool.drain().then(() => {
       if(statusTimer) setTimeout(() => clearInterval(statusTimer), 1000);
       pool.clear();
+      database.close();
     }))
 } else {
   // usage

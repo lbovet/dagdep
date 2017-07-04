@@ -1,9 +1,13 @@
 const delegate = require('./delegate.js');
+var counter=0;
 module.exports = (conf, repoConf) => {
   const pathPattern = /(.*)\/(.*)\/(.*)/
   const artifactPattern = /(.*):(.*):(.*)/
   return {
-    resolve: () => delegate('gradle'+/^win/.test(process.platform) ? ".bat": "", ['-b', 'resolver/build.gradle', '-q', `-Drepository=${repoConf.url}/${repoConf.context}`]),
+    resolve: () => delegate('gradle'+(/^win/.test(process.platform) ? ".bat": ""),
+      ['-b', 'resolver/build.gradle',
+       '-g', `tmp/${counter++}`,
+      '-q', `-Drepository=${repoConf.url}/${repoConf.context}`]),
     id: entry => {
       var tokens = pathPattern.exec(entry.path);
       return tokens[1].replace(/\//g,'.')+':'+tokens[2]+':'+tokens[3];

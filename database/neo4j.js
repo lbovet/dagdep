@@ -37,26 +37,22 @@ module.exports = (conf, type) => {
       });
       return stream;
     },
-    updates: () => {
+    updates: () => function(data, enc, cb) {
       var session = db.session()
-      return through2.obj( function(data, enc, cb) {
-        this.push(data)
-        var command = commands[data.type];
-        session
-          .run(command, data)
-          .catch(function(err) {
-            console.error(err)
-            cb()
-          })
-          .then(function(result) {
-            cb()
-          })
+      this.push(data)
+      var command = commands[data.type];
+      session
+        .run(command, data)
+        .catch(function(err) {
+          console.error(err)
+          session.close();
+          cb()
+        })
+        .then(function(result) {
+          session.close();
+          cb()
+        })
       },
-      (cb) => { // on close
-        session.close();
-        db.close();
-        cb();
-      })
-    }
+    close: () => db.close()
   }
 }
