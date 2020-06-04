@@ -17,7 +17,7 @@ module.exports = (conf, resolver) => {
     },
     body: `items.find(
       {"repo":{"$eq":"${conf.context}"}},
-      {"path":{"$nmatch": "*-SNAPSHOT"}},
+      {"path":{"$nmatch": "*-SNAPSHOT*"}},
       {"name":{"$match": "*.${resolver.type}"}}
     ).include("path", "name")`
   };

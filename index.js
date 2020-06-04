@@ -11,9 +11,12 @@ const fs = require('fs');
 const chalk = require('chalk');
 const conf = require('rc')('dagdep', {
   repository: {},
-  resolver: {},
-  database: {},
-  parallel: 1
+  resolver: {
+    parallel: 1
+  },
+  database: {
+    parallel: 1
+  },
 });
 if(!conf.repository.type) {
   conf.repository.type = conf.repository.url ? 'artifactory' : 'filesystem'
@@ -62,7 +65,7 @@ if(process.argv.indexOf('--help') == -1) {
   const pool = pooling.createPool({
     create: () => Promise.resolve(resolver.resolve()),
     destroy: fn => fn.destroy ? fn.destroy() : null
-  }, { min: conf.parallel, max: conf.parallel });
+  }, { min: conf.resolver.parallel, max: conf.resolver.parallel });
   // resolve function proxy wrapping the pool aquire/release
   const resolve = function(data, enc, cb) {
     var self = this;
@@ -114,9 +117,9 @@ if(process.argv.indexOf('--help') == -1) {
     .pipe(filter.obj(data => data[0] && !data[1])) // keep the artifacts that exist only in the repository
     .pipe(map.obj(data => data[0]))
     .pipe(map.obj(inc('resolving')))
-    .pipe(parallel.obj({maxConcurrency: conf.parallel, highWaterMark: 262144}, resolve))
+    .pipe(parallel.obj({maxConcurrency: conf.resolver.parallel, highWaterMark: 262144}, resolve))
     .pipe(map.obj(normalize))
-    .pipe(parallel.obj({maxConcurrency: conf.parallel, highWaterMark: 262144}, database.updates()))
+    .pipe(parallel.obj({maxConcurrency: conf.database.parallel, highWaterMark: 262144}, database.updates()))
     .pipe(map.obj(inc('updated')))
     .pipe(map.obj(data => JSON.stringify(data)+'\n'))
     .pipe(fs.createWriteStream('output.log'))
